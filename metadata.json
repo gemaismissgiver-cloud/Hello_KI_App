@@ -1,0 +1,6 @@
+{
+  "name": "Hello KI App",
+  "description": "Daten-Übersicht, Freie Dokumentation, Medieninspektion, Ruhebereich und 0-Logik.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
