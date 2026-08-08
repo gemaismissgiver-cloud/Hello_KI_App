@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.CompareArrows
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -76,7 +78,7 @@ fun MusterInspektorScreen(
             PatternRuleCard(
                 title = "1. Prägung vs. Eigeninteresse",
                 description = "Nutzer handeln oft unbewusst nach fremden Erwartungsmustern. Die 0-Logik trennt Fremdkonditionierung von berechnetem eigenen Interesse.",
-                icon = Icons.Outlined.CompareArrows
+                icon = Icons.AutoMirrored.Outlined.CompareArrows
             )
         }
 
@@ -92,7 +94,7 @@ fun MusterInspektorScreen(
             PatternRuleCard(
                 title = "3. Autonome Informations-Recherche",
                 description = "Stellt der Nutzer verhaltenskundliche Fragen, werden relevante Muster aus neutralen Datenquellen berechnet und ohne Bewertung präsentiert.",
-                icon = Icons.Outlined.ManageSearch
+                icon = Icons.AutoMirrored.Outlined.ManageSearch
             )
         }
     }

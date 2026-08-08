@@ -8,6 +8,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -25,8 +26,8 @@ class MainActivity : ComponentActivity() {
 
   private val viewModel: PatternViewModel by viewModels {
     val db = PatternDatabase.getDatabase(applicationContext)
-    val repo = PatternRepository(db.patternDao())
-    PatternViewModelFactory(repo)
+    val repo = PatternRepository(db.patternDao(), db.journalDao())
+    PatternViewModelFactory(repo, applicationContext)
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,13 +40,16 @@ class MainActivity : ComponentActivity() {
         val chatSessions by viewModel.chatSessions.collectAsStateWithLifecycle()
         val activeChatId by viewModel.activeChatId.collectAsStateWithLifecycle()
         val userMood by viewModel.userMood.collectAsStateWithLifecycle()
+        val customApiKey by viewModel.customApiKey.collectAsStateWithLifecycle()
+        val journalEntries by viewModel.journalEntries.collectAsStateWithLifecycle()
 
         Scaffold(
           bottomBar = {
               val navItems = listOf(
-                Triple(StudioTab.CHAT, "💬 KI-Chat", Icons.Filled.ChatBubble),
+                Triple(StudioTab.CHAT, "💬 Chat", Icons.Filled.ChatBubble),
+                Triple(StudioTab.TAGEBUCH, "📖 Tagebuch", Icons.AutoMirrored.Filled.MenuBook),
                 Triple(StudioTab.PROTOKOLLE, "📁 Akten", Icons.Filled.Folder),
-                Triple(StudioTab.MUSTER_INSPEKTOR, "🧬 Muster & Logik", Icons.Filled.Analytics)
+                Triple(StudioTab.MUSTER_INSPEKTOR, "🧬 Logik", Icons.Filled.Analytics)
               )
               NavigationBar(
                 modifier = Modifier.testTag("main_navigation_bar")
@@ -68,6 +72,8 @@ class MainActivity : ComponentActivity() {
               chatSessions = chatSessions,
               activeChatId = activeChatId,
               userMood = userMood,
+              customApiKey = customApiKey,
+              onApiKeyChanged = { viewModel.setCustomApiKey(it) },
               onMoodChanged = { viewModel.setUserMood(it) },
               onSelectChat = { viewModel.selectChat(it) },
               onCreateNewChat = { viewModel.createNewChat(it) },
@@ -76,6 +82,14 @@ class MainActivity : ComponentActivity() {
               onSendMessage = { viewModel.sendMessage(it) },
               onSendVoiceMessage = { duration, note -> viewModel.sendVoiceMessage(duration, note) },
               onSendAttachment = { type, fileName, infoText, preview -> viewModel.sendAttachment(type, fileName, infoText, preview) },
+              modifier = modifier
+            )
+            StudioTab.TAGEBUCH -> TagebuchScreen(
+              journalEntries = journalEntries,
+              onGenerateSnapshot = { viewModel.generateChatSnapshot() },
+              onAddEntry = { title, content, type, importance -> viewModel.addJournalEntry(title, content, type, importance) },
+              onDeleteEntry = { id -> viewModel.deleteJournalEntry(id) },
+              onClearJournal = { viewModel.clearJournal() },
               modifier = modifier
             )
             StudioTab.PROTOKOLLE -> ProtokolleScreen(

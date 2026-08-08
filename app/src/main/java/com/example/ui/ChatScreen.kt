@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -86,6 +87,8 @@ fun ChatScreen(
     chatSessions: List<ChatSession>,
     activeChatId: String,
     userMood: Float = 0f,
+    customApiKey: String = "",
+    onApiKeyChanged: (String) -> Unit = {},
     onMoodChanged: (Float) -> Unit = {},
     onSelectChat: (String) -> Unit,
     onCreateNewChat: (String) -> Unit,
@@ -180,7 +183,7 @@ fun ChatScreen(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Default.Chat,
+                                    imageVector = Icons.AutoMirrored.Filled.Chat,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.size(16.dp)
@@ -431,7 +434,40 @@ fun ChatScreen(
             }
         }
 
-        // --- Ultra-Compact Single-Row Input Bar ---
+        // --- Schnellauswahl-Fragen (Themen per Klick wählen) ---
+        val quickPromptList = listOf(
+            "⭕ Was ist 0-Punkt Logik?",
+            "⚡ Warum entsteht Reibung & Ego?",
+            "🧠 Verhaltensmuster berechnen",
+            "🕊️ Anleitung zur Stille",
+            "🔍 Ursachen-Analyse starten"
+        )
+        androidx.compose.foundation.lazy.LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(quickPromptList) { chipText ->
+                SuggestionChip(
+                    onClick = { onSendMessage(chipText) },
+                    label = {
+                        Text(
+                            text = chipText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    colors = SuggestionChipDefaults.suggestionChipColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    border = null
+                )
+            }
+        }
+
+        // --- Ultra-Compact Input Bar with 2+ Line Input ---
         Surface(
             tonalElevation = 3.dp,
             shadowElevation = 4.dp,
@@ -525,7 +561,7 @@ fun ChatScreen(
                         .testTag("send_msg_btn")
                 ) {
                     Icon(
-                        Icons.Default.Send,
+                        Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Senden",
                         modifier = Modifier.size(18.dp)
                     )
@@ -540,6 +576,8 @@ fun ChatScreen(
             customFontFamily = customFontFamily,
             customFontColor = customFontColor,
             customFontSize = customFontSize,
+            customApiKey = customApiKey,
+            onApiKeyChanged = onApiKeyChanged,
             onBgColorChanged = { customBgColor = it },
             onFontFamilyChanged = { customFontFamily = it },
             onFontColorChanged = { customFontColor = it },
@@ -603,7 +641,7 @@ fun ChatScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Sprachdatei Senden")
                 }
@@ -814,6 +852,8 @@ fun ChatSettingsDialog(
     customFontFamily: CustomFontFamily,
     customFontColor: CustomFontColor,
     customFontSize: CustomFontSize,
+    customApiKey: String = "",
+    onApiKeyChanged: (String) -> Unit = {},
     onBgColorChanged: (CustomBgColor) -> Unit,
     onFontFamilyChanged: (CustomFontFamily) -> Unit,
     onFontColorChanged: (CustomFontColor) -> Unit,
@@ -821,6 +861,7 @@ fun ChatSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
+    var apiKeyText by remember { mutableStateOf(customApiKey) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -839,10 +880,31 @@ fun ChatSettingsDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp)
+                    .heightIn(max = 450.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // --- 0. Gemini API Key ---
+                Text("🔑 Gemini 3.5 API-Schlüssel (Optional):", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = apiKeyText,
+                    onValueChange = {
+                        apiKeyText = it
+                        onApiKeyChanged(it)
+                    },
+                    label = { Text("Gemini API Key eintragen") },
+                    placeholder = { Text("AIzaSy...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = if (apiKeyText.isNotBlank()) "✅ Live Gemini 3.5 Flash KI aktiviert." else "ℹ️ Ohne Key antwortet die KI im geräteinternen 0-Punkt Logik Modus.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (apiKeyText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HorizontalDivider()
+
                 // --- 1. Vorschau Box ---
                 Text("👁️ Live-Vorschau:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 val previewBg = if (isDark) customBgColor.darkColor else customBgColor.lightColor
@@ -874,7 +936,7 @@ fun ChatSettingsDialog(
                     }
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // --- 2. Hintergrund-Farben Wahl ---
                 Text("🎨 Hintergrund-Farbe Wahl:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -898,7 +960,7 @@ fun ChatSettingsDialog(
                     }
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // --- 3. Schriftform Wahl ---
                 Text("🔤 Schriftform / Schriftart Wahl:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -925,7 +987,7 @@ fun ChatSettingsDialog(
                     }
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // --- 4. Schriftfarbe Wahl ---
                 Text("🖌️ Schriftfarbe Wahl:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -953,7 +1015,7 @@ fun ChatSettingsDialog(
                     }
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 // --- 5. Schriftgrößen Wahl ---
                 Text("📏 Schriftgröße Wahl:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -1043,23 +1105,15 @@ fun SmsMessageBubble(
     val isDark = isSystemInDarkTheme()
 
     val textColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimary
+        Color(0xFFFFFFFF)
     } else {
-        if (surfaceMode == ChatSurfaceMode.ZERO_POINT_TALKS) {
-            if (isDark) Color(0xFFFFFFFF) else Color(0xFF020D1A)
-        } else {
-            if (isDark) Color(0xFFFFFFFF) else customFontColor.lightColor
-        }
+        if (isDark) Color(0xFFFFFFFF) else Color(0xFF0F172A)
     }
 
     val bubbleBg = if (isUser) {
-        MaterialTheme.colorScheme.primary
+        Color(0xFF0284C7)
     } else {
-        if (surfaceMode == ChatSurfaceMode.ZERO_POINT_TALKS) {
-            if (isDark) Color(0xFF1B2A38) else Color(0xFFDCEBFA)
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        }
+        if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
     }
 
     Column(
@@ -1078,8 +1132,8 @@ fun SmsMessageBubble(
                     bottomEnd = if (isUser) 4.dp else 18.dp
                 ),
                 color = bubbleBg,
-                border = if (!isUser && surfaceMode == ChatSurfaceMode.ZERO_POINT_TALKS) {
-                    androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0077B6).copy(alpha = 0.4f))
+                border = if (!isUser) {
+                    androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1))
                 } else null,
                 modifier = Modifier.widthIn(max = 340.dp)
             ) {
@@ -1093,12 +1147,12 @@ fun SmsMessageBubble(
                             text = if (isUser) "Du" else "Hello KI (0-Punkt)",
                             style = MaterialTheme.typography.labelMedium.copy(fontFamily = customFontFamily.fontFamily),
                             fontWeight = FontWeight.Bold,
-                            color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f) else Color(0xFF0077B6)
+                            color = if (isUser) Color(0xFFFFFFFF) else if (isDark) Color(0xFF38BDF8) else Color(0xFF0369A1)
                         )
                         Text(
                             text = dateFormat.format(Date(message.timestamp)),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = if (isUser) Color(0xFFE0F2FE) else if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
                         )
                     }
 
@@ -1244,7 +1298,7 @@ fun SmsMessageBubble(
 
                     message.patternAnalysis?.let { analysis ->
                         Spacer(modifier = Modifier.height(10.dp))
-                        Divider(
+                        HorizontalDivider(
                             color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outlineVariant,
                             thickness = 1.dp
                         )

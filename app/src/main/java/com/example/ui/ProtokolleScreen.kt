@@ -253,7 +253,7 @@ fun AkteCard(
 
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.padding(top = 8.dp)) {
-                    Divider(modifier = Modifier.padding(vertical = 6.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                     Text(
                         text = "0-Logik Metrik & Ursache:",
                         style = MaterialTheme.typography.labelMedium,
