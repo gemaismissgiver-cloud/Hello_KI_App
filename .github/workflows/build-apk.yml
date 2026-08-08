@@ -26,10 +26,13 @@ jobs:
 
       - name: Create .env file
         run: |
-          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+          if [ -f .env.example ]; then
+            cp .env.example .env
           else
-            echo "GEMINI_API_KEY=" > .env
+            echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env
+          fi
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           fi
 
       - name: Build Debug APK
