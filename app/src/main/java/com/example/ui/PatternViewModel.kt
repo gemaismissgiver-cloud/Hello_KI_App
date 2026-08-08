@@ -516,21 +516,26 @@ class PatternViewModel(
     private suspend fun fetchGeminiResponse(history: List<ChatMessage>, apiKey: String): String? = withContext(Dispatchers.IO) {
         try {
             val cleanKey = apiKey.trim()
-            val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29")
+            val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29") || (!cleanKey.startsWith("AIza") && cleanKey.length > 50)
             
-            val urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$cleanKey"
+            val urlString = if (isOAuthToken) {
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+            } else {
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$cleanKey"
+            }
             
             val url = URL(urlString)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("x-goog-api-key", cleanKey)
             if (isOAuthToken) {
                 conn.setRequestProperty("Authorization", "Bearer $cleanKey")
+            } else {
+                conn.setRequestProperty("x-goog-api-key", cleanKey)
             }
             conn.doOutput = true
-            conn.connectTimeout = 10000
-            conn.readTimeout = 15000
+            conn.connectTimeout = 15000
+            conn.readTimeout = 25000
 
             val journalList = try { repository.getJournalEntriesList() } catch (e: Exception) { emptyList() }
             val memoryFormatted = if (journalList.isEmpty()) {
@@ -626,7 +631,28 @@ class PatternViewModel(
             } else {
                 val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: conn.responseMessage ?: ""
                 android.util.Log.e("PatternViewModel", "Gemini API Error ${conn.responseCode}: $errText")
-                return@withContext "⚠️ **Gemini API Fehler (${conn.responseCode})**\n\nGoogle hat die Anfrage abgelehnt:\n$errText\n\nBitte überprüfe den eingegebenen API-Schlüssel in den Einstellungen."
+                
+                val userHelp = if (conn.responseCode == 401 || errText.contains("API_KEY_SERVICE_BLOCKED") || errText.contains("API keys are not supported")) {
+                    """
+                    ⚠️ **Gemini API Key Fehler (401 / API_KEY_SERVICE_BLOCKED)**
+                    
+                    Google hat den eingegebenen Schlüssel abgelehnt.
+                    
+                    **Mögliche Ursachen & Lösung:**
+                    1. **AI Studio API-Key nutzen (Empfohlen)**:
+                       Hole dir einen kostenlosen Gemini Key direkt unter:
+                       👉 https://aistudio.google.com/app/apikey
+                       (Er beginnt üblicherweise mit `AIzaSy...`)
+                    
+                    2. **Google Cloud Console Einstellung**:
+                       Falls du den Key in der GCP Console erstellt hast:
+                       • Aktiviere die **Generative Language API** in deinem Cloud Projekt.
+                       • Entferne Einschränkungen, die den Zugriff auf `generativelanguage.googleapis.com` blockieren.
+                    """.trimIndent()
+                } else {
+                    "⚠️ **Gemini API Fehler (${conn.responseCode})**\n\nGoogle hat die Anfrage abgelehnt:\n$errText\n\nBitte überprüfe den eingegebenen API-Schlüssel in den Einstellungen."
+                }
+                return@withContext userHelp
             }
             null
         } catch (e: Exception) {
@@ -679,10 +705,24 @@ class PatternViewModel(
                     {"found": false}
                 """.trimIndent()
 
-                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey")
+                val cleanKey = apiKey.trim()
+                val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29") || (!cleanKey.startsWith("AIza") && cleanKey.length > 50)
+                
+                val urlString = if (isOAuthToken) {
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+                } else {
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$cleanKey"
+                }
+
+                val url = URL(urlString)
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
+                if (isOAuthToken) {
+                    conn.setRequestProperty("Authorization", "Bearer $cleanKey")
+                } else {
+                    conn.setRequestProperty("x-goog-api-key", cleanKey)
+                }
                 conn.doOutput = true
                 conn.connectTimeout = 8000
                 conn.readTimeout = 10000

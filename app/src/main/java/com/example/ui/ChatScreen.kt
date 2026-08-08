@@ -1127,6 +1127,15 @@ fun SmsMessageBubble(
     val dateFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     var isAudioPlaying by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var showCopiedText by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showCopiedText) {
+        if (showCopiedText) {
+            delay(2000L)
+            showCopiedText = false
+        }
+    }
 
     val textColor = if (isUser) {
         Color(0xFFFFFFFF)
@@ -1167,17 +1176,52 @@ fun SmsMessageBubble(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = if (isUser) "Du" else "Hello KI (0-Punkt)",
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = customFontFamily.fontFamily),
-                            fontWeight = FontWeight.Bold,
-                            color = if (isUser) Color(0xFFFFFFFF) else if (isDark) Color(0xFF38BDF8) else Color(0xFF0369A1)
-                        )
-                        Text(
-                            text = dateFormat.format(Date(message.timestamp)),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isUser) Color(0xFFE0F2FE) else if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (isUser) "Du" else "Hello KI (0-Punkt)",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = customFontFamily.fontFamily),
+                                fontWeight = FontWeight.Bold,
+                                color = if (isUser) Color(0xFFFFFFFF) else if (isDark) Color(0xFF38BDF8) else Color(0xFF0369A1)
+                            )
+                            if (showCopiedText) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (isUser) Color(0xFF0284C7) else MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "Kopiert!",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isUser) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = dateFormat.format(Date(message.timestamp)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isUser) Color(0xFFE0F2FE) else if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(message.text))
+                                    showCopiedText = true
+                                },
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .testTag("copy_msg_btn_${message.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (showCopiedText) Icons.Default.Check else Icons.Outlined.ContentCopy,
+                                    contentDescription = "Nachricht kopieren",
+                                    tint = if (isUser) Color(0xFFE0F2FE) else if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
