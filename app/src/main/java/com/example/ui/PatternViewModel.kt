@@ -602,6 +602,9 @@ class PatternViewModel(
                     }))
                 })
                 put("contents", contentsArray)
+                put("tools", JSONArray().put(JSONObject().apply {
+                    put("googleSearch", JSONObject())
+                }))
             }
 
             conn.outputStream.use { os ->
