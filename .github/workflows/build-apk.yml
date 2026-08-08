@@ -22,6 +22,14 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Create .env file
+        run: |
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+          else
+            echo "GEMINI_API_KEY=" > .env
+          fi
+
       - name: Build Debug APK
         run: gradle assembleDebug
 

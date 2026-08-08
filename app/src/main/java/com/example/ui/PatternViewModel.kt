@@ -515,10 +515,19 @@ class PatternViewModel(
 
     private suspend fun fetchGeminiResponse(history: List<ChatMessage>, apiKey: String): String? = withContext(Dispatchers.IO) {
         try {
-            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey")
+            val cleanKey = apiKey.trim()
+            val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29")
+            
+            val urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$cleanKey"
+            
+            val url = URL(urlString)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("x-goog-api-key", cleanKey)
+            if (isOAuthToken) {
+                conn.setRequestProperty("Authorization", "Bearer $cleanKey")
+            }
             conn.doOutput = true
             conn.connectTimeout = 10000
             conn.readTimeout = 15000
@@ -612,13 +621,14 @@ class PatternViewModel(
                     }
                 }
             } else {
-                val errText = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: conn.responseMessage ?: ""
                 android.util.Log.e("PatternViewModel", "Gemini API Error ${conn.responseCode}: $errText")
+                return@withContext "⚠️ **Gemini API Fehler (${conn.responseCode})**\n\nGoogle hat die Anfrage abgelehnt:\n$errText\n\nBitte überprüfe den eingegebenen API-Schlüssel in den Einstellungen."
             }
             null
         } catch (e: Exception) {
             android.util.Log.e("PatternViewModel", "Gemini API Exception", e)
-            null
+            return@withContext "⚠️ **Verbindung zur Gemini API fehlgeschlagen:** ${e.localizedMessage ?: e.message}\n\nBitte prüfe deine Verbindung oder den eingegebenen API-Schlüssel."
         }
     }
 

@@ -226,18 +226,32 @@ fun ChatScreen(
                         )
                     }
 
-                    IconButton(
+                    Surface(
                         onClick = { showSettingsDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (customApiKey.isBlank()) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
-                            .size(36.dp)
+                            .padding(horizontal = 2.dp)
                             .testTag("settings_btn")
                     ) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Design & Schrift",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.VpnKey,
+                                contentDescription = "API Key Einstellungen",
+                                tint = if (customApiKey.isBlank()) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (customApiKey.isNotBlank()) "⚙️ API Key" else "🔑 Key eintragen",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (customApiKey.isBlank()) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
                     IconButton(
@@ -897,10 +911,20 @@ fun ChatSettingsDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                val cleanKey = apiKeyText.trim()
+                val isAizaFormat = cleanKey.startsWith("AIzaSy")
+                val isOAuthFormat = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29")
+                val isHasKey = cleanKey.isNotBlank()
+
                 Text(
-                    text = if (apiKeyText.isNotBlank()) "✅ Live Gemini 3.5 Flash KI aktiviert." else "ℹ️ Ohne Key antwortet die KI im geräteinternen 0-Punkt Logik Modus.",
+                    text = when {
+                        isAizaFormat -> "✅ Standard Gemini API-Schlüssel aktiviert (AIzaSy-Format)."
+                        isOAuthFormat -> "⚡ OAuth-Token / Cloud-Schlüssel aktiviert (AQ-Format als Bearer Token)."
+                        isHasKey -> "✅ API-Schlüssel gespeichert."
+                        else -> "ℹ️ Ohne Key antwortet die KI im geräteinternen 0-Punkt Logik Modus."
+                    },
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (apiKeyText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isHasKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 HorizontalDivider()
