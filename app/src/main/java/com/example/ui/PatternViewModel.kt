@@ -519,9 +519,9 @@ class PatternViewModel(
             val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29") || (!cleanKey.startsWith("AIza") && cleanKey.length > 50)
             
             val urlString = if (isOAuthToken) {
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
             } else {
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$cleanKey"
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$cleanKey"
             }
             
             val url = URL(urlString)
@@ -642,12 +642,10 @@ class PatternViewModel(
                     1. **AI Studio API-Key nutzen (Empfohlen)**:
                        Hole dir einen kostenlosen Gemini Key direkt unter:
                        👉 https://aistudio.google.com/app/apikey
-                       (Er beginnt üblicherweise mit `AIzaSy...`)
+                       (Google verwendet hierfür z. B. Keys mit dem Präfix `AQ...` oder `AIza...`)
                     
-                    2. **Google Cloud Console Einstellung**:
-                       Falls du den Key in der GCP Console erstellt hast:
-                       • Aktiviere die **Generative Language API** in deinem Cloud Projekt.
-                       • Entferne Einschränkungen, die den Zugriff auf `generativelanguage.googleapis.com` blockieren.
+                    2. **API Schlüssel in den App-Einstellungen eintragen**:
+                       Füge deinen Key in den App-Einstellungen ein. Die App unterstützt sowohl `AQ...` als auch `AIza...` Formate.
                     """.trimIndent()
                 } else {
                     "⚠️ **Gemini API Fehler (${conn.responseCode})**\n\nGoogle hat die Anfrage abgelehnt:\n$errText\n\nBitte überprüfe den eingegebenen API-Schlüssel in den Einstellungen."
@@ -709,9 +707,9 @@ class PatternViewModel(
                 val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29") || (!cleanKey.startsWith("AIza") && cleanKey.length > 50)
                 
                 val urlString = if (isOAuthToken) {
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
                 } else {
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$cleanKey"
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$cleanKey"
                 }
 
                 val url = URL(urlString)
