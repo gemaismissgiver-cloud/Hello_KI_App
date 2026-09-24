@@ -229,7 +229,7 @@ fun ChatScreen(
                     Surface(
                         onClick = { showSettingsDialog = true },
                         shape = RoundedCornerShape(12.dp),
-                        color = if (customApiKey.isBlank()) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        color = if (customApiKey.isNotBlank()) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
                         modifier = Modifier
                             .padding(horizontal = 2.dp)
                             .testTag("settings_btn")
@@ -241,15 +241,15 @@ fun ChatScreen(
                             Icon(
                                 Icons.Default.VpnKey,
                                 contentDescription = "API Key Einstellungen",
-                                tint = if (customApiKey.isBlank()) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.primary,
+                                tint = if (customApiKey.isNotBlank()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (customApiKey.isNotBlank()) "⚙️ API Key" else "🔑 Key eintragen",
+                                text = if (customApiKey.isNotBlank()) "✅ Key Aktiv" else "🔑 Key eintragen",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (customApiKey.isBlank()) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (customApiKey.isNotBlank()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
                             )
                         }
                     }
@@ -898,28 +898,40 @@ fun ChatSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // --- 0. Gemini API Key ---
-                Text("🔑 Gemini 3.5 API-Schlüssel (Optional):", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                // --- 0. KI API Key ---
+                Text("🔑 API-Schlüssel (Gemini / Groq / AI Studio):", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     value = apiKeyText,
                     onValueChange = {
                         apiKeyText = it
                         onApiKeyChanged(it)
                     },
-                    label = { Text("Gemini API Key eintragen") },
-                    placeholder = { Text("AIzaSy...") },
+                    label = { Text("API Key eintragen (Gemini oder Groq)") },
+                    placeholder = { Text("AIza... / AQ... / gsk_...") },
+                    trailingIcon = if (apiKeyText.isNotBlank()) {
+                        {
+                            IconButton(onClick = {
+                                apiKeyText = ""
+                                onApiKeyChanged("")
+                            }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Key zurücksetzen")
+                            }
+                        }
+                    } else null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 val cleanKey = apiKeyText.trim()
-                val isAizaFormat = cleanKey.startsWith("AIzaSy")
+                val isAizaFormat = cleanKey.startsWith("AIza")
+                val isGroqFormat = cleanKey.startsWith("gsk_")
                 val isOAuthFormat = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29")
                 val isHasKey = cleanKey.isNotBlank()
 
                 Text(
                     text = when {
-                        isAizaFormat -> "✅ Standard Gemini API-Schlüssel aktiviert (AIzaSy-Format)."
-                        isOAuthFormat -> "⚡ OAuth-Token / Cloud-Schlüssel aktiviert (AQ-Format als Bearer Token)."
+                        isGroqFormat -> "⚡ Groq API-Schlüssel aktiviert (Llama 3.3 70B Modell)."
+                        isAizaFormat -> "✅ Standard Gemini API-Schlüssel aktiviert (AIza-Format)."
+                        isOAuthFormat -> "⚡ OAuth / AI Studio Schlüssel aktiviert (AQ-Format)."
                         isHasKey -> "✅ API-Schlüssel gespeichert."
                         else -> "ℹ️ Ohne Key antwortet die KI im geräteinternen 0-Punkt Logik Modus."
                     },

@@ -2,8 +2,11 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "**" ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,10 +16,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
 
       - name: Setup Gradle
@@ -24,12 +27,21 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Restore Keystore
+        run: |
+          if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
       - name: Create .env file
         run: |
           if [ -f .env.example ]; then
             cp .env.example .env
           else
-            echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env
+            touch .env
+          fi
+          if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
+            echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> .env
           fi
           if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
@@ -38,10 +50,17 @@ jobs:
       - name: Build Debug APK
         env:
           JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
-        run: gradle assembleDebug --no-daemon
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Hello_KI_App-Debug-APK
+          name: Hello_KI_Groq_App-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+

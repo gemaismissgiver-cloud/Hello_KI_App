@@ -42,12 +42,16 @@ class MainActivity : ComponentActivity() {
         val userMood by viewModel.userMood.collectAsStateWithLifecycle()
         val customApiKey by viewModel.customApiKey.collectAsStateWithLifecycle()
         val journalEntries by viewModel.journalEntries.collectAsStateWithLifecycle()
+        val generatedCode by viewModel.generatedCode.collectAsStateWithLifecycle()
+        val generatedFileName by viewModel.generatedFileName.collectAsStateWithLifecycle()
+        val isGeneratingCode by viewModel.isGeneratingCode.collectAsStateWithLifecycle()
 
         Scaffold(
           bottomBar = {
               val navItems = listOf(
                 Triple(StudioTab.CHAT, "💬 Chat", Icons.Filled.ChatBubble),
                 Triple(StudioTab.TAGEBUCH, "📖 Tagebuch", Icons.AutoMirrored.Filled.MenuBook),
+                Triple(StudioTab.CODE_STUDIO, "💻 Code", Icons.Filled.Code),
                 Triple(StudioTab.PROTOKOLLE, "📁 Akten", Icons.Filled.Folder),
                 Triple(StudioTab.MUSTER_INSPEKTOR, "🧬 Logik", Icons.Filled.Analytics)
               )
@@ -90,6 +94,15 @@ class MainActivity : ComponentActivity() {
               onAddEntry = { title, content, type, importance -> viewModel.addJournalEntry(title, content, type, importance) },
               onDeleteEntry = { id -> viewModel.deleteJournalEntry(id) },
               onClearJournal = { viewModel.clearJournal() },
+              modifier = modifier
+            )
+            StudioTab.CODE_STUDIO -> CodeStudioScreen(
+              currentGeneratedCode = generatedCode,
+              currentGeneratedFileName = generatedFileName,
+              isGenerating = isGeneratingCode,
+              appCodeFiles = viewModel.getAppCodeFiles(),
+              onGenerateCode = { prompt, lang -> viewModel.generateCode(prompt, lang) },
+              onSendCodeToChat = { fileName, code -> viewModel.sendCodeToActiveChat(fileName, code) },
               modifier = modifier
             )
             StudioTab.PROTOKOLLE -> ProtokolleScreen(
