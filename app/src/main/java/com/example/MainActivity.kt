@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         val activeChatId by viewModel.activeChatId.collectAsStateWithLifecycle()
         val userMood by viewModel.userMood.collectAsStateWithLifecycle()
         val customApiKey by viewModel.customApiKey.collectAsStateWithLifecycle()
+        val liveWebEnabled by viewModel.liveWebEnabled.collectAsStateWithLifecycle()
         val journalEntries by viewModel.journalEntries.collectAsStateWithLifecycle()
         val generatedCode by viewModel.generatedCode.collectAsStateWithLifecycle()
         val generatedFileName by viewModel.generatedFileName.collectAsStateWithLifecycle()
@@ -77,6 +78,8 @@ class MainActivity : ComponentActivity() {
               activeChatId = activeChatId,
               userMood = userMood,
               customApiKey = customApiKey,
+              liveWebEnabled = liveWebEnabled,
+              onToggleLiveWeb = { viewModel.toggleLiveWeb() },
               onApiKeyChanged = { viewModel.setCustomApiKey(it) },
               onMoodChanged = { viewModel.setUserMood(it) },
               onSelectChat = { viewModel.selectChat(it) },

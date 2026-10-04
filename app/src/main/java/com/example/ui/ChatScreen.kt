@@ -88,6 +88,8 @@ fun ChatScreen(
     activeChatId: String,
     userMood: Float = 0f,
     customApiKey: String = "",
+    liveWebEnabled: Boolean = true,
+    onToggleLiveWeb: () -> Unit = {},
     onApiKeyChanged: (String) -> Unit = {},
     onMoodChanged: (Float) -> Unit = {},
     onSelectChat: (String) -> Unit,
@@ -226,30 +228,79 @@ fun ChatScreen(
                         )
                     }
 
+                    // Live-Web internet search toggle chip
+                    Surface(
+                        onClick = onToggleLiveWeb,
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (liveWebEnabled) Color(0xFF0284C7) else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Public,
+                                contentDescription = "Live-Internet Recherche",
+                                tint = if (liveWebEnabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (liveWebEnabled) "🌐 Web" else "🌐 Aus",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (liveWebEnabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Model & Key indicator chip
+                    val isOfflineMode = customApiKey.trim() == "OFFLINE_LOCAL"
+                    val keyLabel = when {
+                        isOfflineMode -> "📴 Offline-KI"
+                        customApiKey.startsWith("gsk_") -> "⚡ Groq"
+                        customApiKey.startsWith("AIza") -> "✨ Gemini"
+                        customApiKey.isNotBlank() -> "🔑 Key"
+                        else -> "🌐 OpenSource"
+                    }
+                    val keyColor = when {
+                        isOfflineMode -> Color(0xFF0891B2)
+                        customApiKey.startsWith("gsk_") -> Color(0xFFF97316)
+                        customApiKey.startsWith("AIza") -> Color(0xFF0077B6)
+                        customApiKey.isNotBlank() -> MaterialTheme.colorScheme.primary
+                        else -> Color(0xFF10B981)
+                    }
+
                     Surface(
                         onClick = { showSettingsDialog = true },
                         shape = RoundedCornerShape(12.dp),
-                        color = if (customApiKey.isNotBlank()) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
+                        color = keyColor.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, keyColor.copy(alpha = 0.4f)),
                         modifier = Modifier
                             .padding(horizontal = 2.dp)
                             .testTag("settings_btn")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                         ) {
                             Icon(
-                                Icons.Default.VpnKey,
-                                contentDescription = "API Key Einstellungen",
-                                tint = if (customApiKey.isNotBlank()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(16.dp)
+                                when {
+                                    isOfflineMode -> Icons.Default.OfflineBolt
+                                    customApiKey.isNotBlank() -> Icons.Default.VpnKey
+                                    else -> Icons.Default.CloudQueue
+                                },
+                                contentDescription = "Modell & API Key Einstellungen",
+                                tint = keyColor,
+                                modifier = Modifier.size(14.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = if (customApiKey.isNotBlank()) "✅ Key Aktiv" else "🔑 Key eintragen",
+                                text = keyLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (customApiKey.isNotBlank()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
+                                color = keyColor
                             )
                         }
                     }
@@ -450,6 +501,7 @@ fun ChatScreen(
 
         // --- Schnellauswahl-Fragen (Themen per Klick wählen) ---
         val quickPromptList = listOf(
+            "📴 Kannst du offline antworten?",
             "⭕ Was ist 0-Punkt Logik?",
             "⚡ Warum entsteht Reibung & Ego?",
             "🧠 Verhaltensmuster berechnen",
@@ -898,17 +950,85 @@ fun ChatSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // --- 0. KI API Key ---
-                Text("🔑 API-Schlüssel (Gemini / Groq / AI Studio):", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                // --- 0. KI Modell & API-Schlüssel ---
+                Text("🤖 KI-Modell & Verbindungsmodus:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+
+                val cleanKey = apiKeyText.trim()
+                val isOfflineSelected = cleanKey == "OFFLINE_LOCAL"
+                val isAizaFormat = cleanKey.startsWith("AIza")
+                val isGroqFormat = cleanKey.startsWith("gsk_")
+                val isOAuthFormat = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29")
+                val isHasCustomKey = cleanKey.isNotBlank() && !isOfflineSelected
+
+                // 1-Click Button for Free Open-Source Mode (Online + Auto-Offline Fallback)
+                Surface(
+                    onClick = {
+                        apiKeyText = ""
+                        onApiKeyChanged("")
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (!isHasCustomKey && !isOfflineSelected) Color(0xFF10B981).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (!isHasCustomKey && !isOfflineSelected) Color(0xFF10B981) else Color.Transparent),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        RadioButton(
+                            selected = !isHasCustomKey && !isOfflineSelected,
+                            onClick = {
+                                apiKeyText = ""
+                                onApiKeyChanged("")
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("🌐 Kostenloses Open-Source Modell + Auto-Offline", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                            Text("Kein API-Key nötig • Live-Web online • Antwortet ohne Internet automatisch offline", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                // 1-Click Button for 100% Local Offline 0-Point Mode
+                Surface(
+                    onClick = {
+                        apiKeyText = "OFFLINE_LOCAL"
+                        onApiKeyChanged("OFFLINE_LOCAL")
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isOfflineSelected) Color(0xFF0891B2).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isOfflineSelected) Color(0xFF0891B2) else Color.Transparent),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        RadioButton(
+                            selected = isOfflineSelected,
+                            onClick = {
+                                apiKeyText = "OFFLINE_LOCAL"
+                                onApiKeyChanged("OFFLINE_LOCAL")
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("📴 Reine Offline 0-Punkt KI (100% Lokal)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                            Text("Arbeitet komplett ohne Internet direkt auf dem Handy + Room-Gedächtnis", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
                 OutlinedTextField(
-                    value = apiKeyText,
+                    value = if (isOfflineSelected) "" else apiKeyText,
                     onValueChange = {
                         apiKeyText = it
                         onApiKeyChanged(it)
                     },
-                    label = { Text("API Key eintragen (Gemini oder Groq)") },
-                    placeholder = { Text("AIza... / AQ... / gsk_...") },
-                    trailingIcon = if (apiKeyText.isNotBlank()) {
+                    label = { Text("Optional: Eigener API Key (Groq oder Gemini)") },
+                    placeholder = { Text("gsk_... / AIza... / AQ...") },
+                    trailingIcon = if (isHasCustomKey) {
                         {
                             IconButton(onClick = {
                                 apiKeyText = ""
@@ -921,22 +1041,22 @@ fun ChatSettingsDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                val cleanKey = apiKeyText.trim()
-                val isAizaFormat = cleanKey.startsWith("AIza")
-                val isGroqFormat = cleanKey.startsWith("gsk_")
-                val isOAuthFormat = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29")
-                val isHasKey = cleanKey.isNotBlank()
 
                 Text(
                     text = when {
-                        isGroqFormat -> "⚡ Groq API-Schlüssel aktiviert (Llama 3.3 70B Modell)."
-                        isAizaFormat -> "✅ Standard Gemini API-Schlüssel aktiviert (AIza-Format)."
+                        isOfflineSelected -> "📴 Reiner Offline-Modus aktiv: Alle Antworten, Berechnungen und Gedächtnis-Abfragen laufen zu 100% lokal auf deinem Gerät – ganz ohne Internet!"
+                        isGroqFormat -> "⚡ Groq API-Schlüssel aktiv. Nutzt Llama 3.1/3.3 mit automatischem Fallback auf Open-Source & Offline-KI."
+                        isAizaFormat -> "✅ Standard Gemini API-Schlüssel aktiviert (mit automatischem Offline-Fallback bei fehlendem Netz)."
                         isOAuthFormat -> "⚡ OAuth / AI Studio Schlüssel aktiviert (AQ-Format)."
-                        isHasKey -> "✅ API-Schlüssel gespeichert."
-                        else -> "ℹ️ Ohne Key antwortet die KI im geräteinternen 0-Punkt Logik Modus."
+                        isHasCustomKey -> "✅ API-Schlüssel gespeichert (inklusive Offline-Schutz)."
+                        else -> "✅ Open-Source + Auto-Offline aktiv: Online nutzt die KI das kostenlose Modell & Live-Web. Hast du kein Internet, antwortet sofort der lokale 0-Punkt Offline-Kern!"
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isHasKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = when {
+                        isOfflineSelected -> Color(0xFF0891B2)
+                        isHasCustomKey -> MaterialTheme.colorScheme.primary
+                        else -> Color(0xFF059669)
+                    }
                 )
 
                 HorizontalDivider()
@@ -1233,6 +1353,37 @@ fun SmsMessageBubble(
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
+                        }
+                    }
+
+                    if (message.isLiveWebUsed || !message.sourceInfo.isNullOrBlank()) {
+                        val isOfflineBadge = message.sourceInfo?.contains("Offline", ignoreCase = true) == true
+                        val badgeColor = if (isUser) {
+                            Color(0xFFBAE6FD)
+                        } else if (isOfflineBadge) {
+                            Color(0xFF0891B2)
+                        } else {
+                            Color(0xFF0284C7)
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isOfflineBadge) Icons.Default.OfflineBolt else Icons.Default.Public,
+                                contentDescription = if (isOfflineBadge) "Offline Berechnung" else "Live-Internet",
+                                tint = badgeColor,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = when {
+                                    isOfflineBadge -> message.sourceInfo ?: "📴 Offline 0-Punkt Kern"
+                                    !message.sourceInfo.isNullOrBlank() -> "Live-Web: ${message.sourceInfo}"
+                                    else -> "Live-Internet recherchiert"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = badgeColor,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
 

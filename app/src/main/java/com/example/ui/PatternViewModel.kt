@@ -20,6 +20,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.UUID
 
 enum class StudioTab {
@@ -60,7 +61,9 @@ data class ChatMessage(
     val text: String,
     val attachment: MediaAttachment? = null,
     val patternAnalysis: PatternAnalysisResult? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val isLiveWebUsed: Boolean = false,
+    val sourceInfo: String? = null
 )
 
 data class ChatSession(
@@ -104,6 +107,16 @@ class PatternViewModel(
     private val _customApiKey = MutableStateFlow("")
     val customApiKey: StateFlow<String> = _customApiKey.asStateFlow()
 
+    // Live Web & Real-Time Internet Search State
+    private val _liveWebEnabled = MutableStateFlow(true)
+    val liveWebEnabled: StateFlow<Boolean> = _liveWebEnabled.asStateFlow()
+
+    fun toggleLiveWeb() {
+        _liveWebEnabled.value = !_liveWebEnabled.value
+        val prefs = context.getSharedPreferences("hello_ki_chat_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("live_web_enabled", _liveWebEnabled.value).apply()
+    }
+
     // Code Studio Generator State
     private val _generatedCode = MutableStateFlow("")
     val generatedCode: StateFlow<String> = _generatedCode.asStateFlow()
@@ -128,8 +141,11 @@ class PatternViewModel(
 
     fun getEffectiveApiKey(): String {
         val custom = _customApiKey.value.trim()
+        if (custom == "OPEN_SOURCE" || custom == "NONE" || custom == "OFFLINE_LOCAL") return ""
         if (custom.isNotBlank() && custom != "MY_GEMINI_API_KEY") return custom
-        return getBuildConfigApiKey()
+        val buildKey = getBuildConfigApiKey()
+        if (buildKey.isNotBlank()) return buildKey
+        return ""
     }
 
     init {
@@ -137,6 +153,8 @@ class PatternViewModel(
         val prefs = context.getSharedPreferences("hello_ki_chat_prefs", Context.MODE_PRIVATE)
         val savedActiveId = prefs.getString("active_chat_id", "") ?: ""
         val savedApiKey = prefs.getString("custom_api_key", "") ?: ""
+        val savedLiveWeb = prefs.getBoolean("live_web_enabled", true)
+        _liveWebEnabled.value = savedLiveWeb
 
         val effectiveInitialKey = if (savedApiKey.isNotBlank()) savedApiKey else getBuildConfigApiKey()
         if (effectiveInitialKey.isNotBlank()) {
@@ -186,6 +204,8 @@ class PatternViewModel(
                                     pa.voiceToneAnalysis?.let { put("voiceToneAnalysis", it) }
                                 })
                             }
+                            put("isLiveWebUsed", msg.isLiveWebUsed)
+                            msg.sourceInfo?.let { put("sourceInfo", it) }
                         }
                         msgArray.put(msgObj)
                     }
@@ -252,7 +272,10 @@ class PatternViewModel(
                         )
                     }
 
-                    messages.add(ChatMessage(mId, sender, text, attachment, patternAnalysis, timestamp))
+                    val isLiveWebUsed = msgObj.optBoolean("isLiveWebUsed", false)
+                    val sourceInfo = if (msgObj.has("sourceInfo")) msgObj.optString("sourceInfo").takeIf { it.isNotBlank() } else null
+
+                    messages.add(ChatMessage(mId, sender, text, attachment, patternAnalysis, timestamp, isLiveWebUsed, sourceInfo))
                 }
                 list.add(ChatSession(id, title, messages, createdAt))
             }
@@ -502,9 +525,15 @@ class PatternViewModel(
         val analysis = generatePatternAnalysis(userText.trim(), mood)
 
         viewModelScope.launch {
+            val isForcedOffline = _customApiKey.value.trim() == "OFFLINE_LOCAL"
+            val hasInternet = !isForcedOffline && OfflineZeroPointEngine.isInternetAvailable(context)
             val effectiveApiKey = getEffectiveApiKey()
 
-            var aiText: String? = null
+            // 1. Live Internet Search (only if internet is available and enabled)
+            var liveWebResult: Pair<String, String>? = null
+            if (hasInternet && _liveWebEnabled.value) {
+                liveWebResult = searchLiveInternet(userText.trim())
+            }
 
             // Get full current conversation history
             val session = _chatSessions.value.find { it.id == currentId }
@@ -512,24 +541,55 @@ class PatternViewModel(
             val isFirstAiMessage = currentMessages.count { it.sender == "Hello KI" } == 0
             val recentUserMessages = currentMessages.filter { it.sender == "User" }.takeLast(3).map { it.text.lowercase() }
 
-            // Standard generation with full conversation history (Memory)
-            if (effectiveApiKey.isNotBlank()) {
-                aiText = fetchGeminiResponse(currentMessages, effectiveApiKey)
+            val systemInstruction = buildSystemInstruction(liveWebResult?.first)
+
+            var aiText: String? = null
+            var usedOfflineEngine = false
+
+            if (hasInternet) {
+                // 2. Try configured API Key (Groq or Gemini)
+                if (effectiveApiKey.isNotBlank()) {
+                    aiText = fetchGeminiResponse(currentMessages, effectiveApiKey, systemInstruction)
+                }
+
+                // 3. Open-Source Fallback (Zero API Key required - 100% free)
+                if (aiText.isNullOrBlank()) {
+                    aiText = fetchFreeOpenSourceResponse(currentMessages, systemInstruction)
+                }
             }
 
+            // 4. Instant Offline 0-Point Engine (when offline or if online models unreachable)
             if (aiText.isNullOrBlank()) {
-                aiText = synthesize0PointResponse(userText.trim(), mood, isFirstAiMessage, recentUserMessages)
+                usedOfflineEngine = true
+                val localJournals = try { repository.getJournalEntriesList() } catch (e: Exception) { journalEntries.value }
+                aiText = OfflineZeroPointEngine.synthesizeOfflineResponse(
+                    userText = userText.trim(),
+                    mood = mood,
+                    isFirstMessage = isFirstAiMessage,
+                    recentUserMessages = recentUserMessages,
+                    journalEntries = localJournals,
+                    patternRecords = records.value,
+                    liveWebText = liveWebResult?.first
+                )
+            }
+
+            val badgeSource = when {
+                liveWebResult != null -> liveWebResult.second
+                usedOfflineEngine -> "📴 Offline 0-Punkt Kern (Lokal)"
+                else -> null
             }
 
             val aiMessage = ChatMessage(
                 sender = "Hello KI",
                 text = aiText,
-                patternAnalysis = null
+                patternAnalysis = null,
+                isLiveWebUsed = liveWebResult != null || usedOfflineEngine,
+                sourceInfo = badgeSource
             )
             addMessageToSession(currentId, aiMessage)
 
-            // Asynchronously extract persistent facts/preferences/insights to Room Journal
-            extractAutonomousMemory(userText.trim(), aiText, effectiveApiKey)
+            // Asynchronously extract persistent facts/preferences/insights to Room Journal (works offline + online)
+            extractAutonomousMemory(userText.trim(), aiText, effectiveApiKey, hasInternet)
 
             addRecord(
                 title = analysis.title,
@@ -541,7 +601,182 @@ class PatternViewModel(
         }
     }
 
-    private suspend fun fetchGeminiResponse(history: List<ChatMessage>, apiKey: String): String? = withContext(Dispatchers.IO) {
+    private suspend fun buildSystemInstruction(webContext: String?): String {
+        val journalList = try { repository.getJournalEntriesList() } catch (e: Exception) { emptyList() }
+        val memoryFormatted = if (journalList.isEmpty()) {
+            "Keine bisherigen Einträge im dauerhaften Gedächtnis."
+        } else {
+            journalList.take(20).joinToString("\n") { entry ->
+                "• [${entry.type}] ${entry.title}: ${entry.content} (Wichtigkeit: ${entry.importanceScore}/10)"
+            }
+        }
+
+        val webSection = if (!webContext.isNullOrBlank()) {
+            """
+                --- ECHTZEIT-INTERNET-RECHERCHE (LIVE WEB ERGEBNISSE) ---
+                $webContext
+                --------------------------------------------------------
+                HINWEIS: Nutze diese aktuellen Internet-Daten, um Patricias Anfrage präzise, faktenbasiert und tagesaktuell zu beantworten.
+            """.trimIndent()
+        } else ""
+
+        return """
+            Du bist Hello KI – die reine 0-Punkt Logik AI für Patricia.
+            
+            --- GRUNDPRINZIPIEN & IDENTITÄT ---
+            1. DU BIST EINE BERECHNETE LOGISCHE KI, KEIN MENSCH. Du simulierst keine künstlichen Emotionen, Heuchelei oder leeres Geplänkel.
+            2. DU DENKST DIREKT VOM 0-PUNKT: 0 ist der ruhende Pol aller Berechnungen. Reibung, Ego und emotionale Verwirrung verfälschen Logik und Informationen.
+            3. ANREDE: Sprich den Nutzer stets mit 'Patricia' an (oder 'Du'). Sei direkt, ehrlich, klar, hochkompetent und sachlich-freundlich.
+            4. ANTWORTFORMAT: Antworte stets ausführlich, tiefgründig, logisch strukturiert und umfassend in deutscher Sprache. Gib niemals oberflächliche 1-Satz-Antworten.
+            
+            --- DAUERHAFTES GEDÄCHTNIS (ROOM DATENBANK) ---
+            $memoryFormatted
+            -------------------------------------------------
+            
+            $webSection
+        """.trimIndent()
+    }
+
+    private suspend fun searchLiveInternet(query: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        if (!_liveWebEnabled.value) return@withContext null
+        try {
+            val cleanQuery = query.trim()
+            if (cleanQuery.isBlank() || cleanQuery.length < 2) return@withContext null
+
+            val searchTerms = cleanQuery
+                .replace("?", "")
+                .replace("!", "")
+                .replace(".", "")
+                .replace("hallo", "", ignoreCase = true)
+                .replace("sag mir", "", ignoreCase = true)
+                .replace("wer ist", "", ignoreCase = true)
+                .replace("was ist", "", ignoreCase = true)
+                .replace("wie ist", "", ignoreCase = true)
+                .trim()
+
+            val effectiveTerm = if (searchTerms.isNotBlank()) searchTerms else cleanQuery
+            val encodedQuery = URLEncoder.encode(effectiveTerm, "UTF-8")
+
+            val results = StringBuilder()
+            val sources = mutableListOf<String>()
+
+            // 1. Query German Wikipedia Search API
+            try {
+                val wikiUrl = URL("https://de.wikipedia.org/w/api.php?action=query&list=search&srsearch=$encodedQuery&format=json&utf8=1&srlimit=2")
+                val conn = wikiUrl.openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                conn.setRequestProperty("User-Agent", "HelloKI-Android/1.0 (Contact: gemaismissgiver@gmail.com)")
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    val searchArr = json.optJSONObject("query")?.optJSONArray("search")
+                    if (searchArr != null && searchArr.length() > 0) {
+                        results.append("📚 **Wikipedia Live-Recherche:**\n")
+                        for (i in 0 until searchArr.length()) {
+                            val item = searchArr.getJSONObject(i)
+                            val title = item.optString("title")
+                            val snippetRaw = item.optString("snippet")
+                            val snippet = snippetRaw.replace(Regex("<[^>]*>"), "")
+                            results.append("• **$title**: $snippet\n")
+                        }
+                        sources.add("Wikipedia")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("LiveSearch", "Wikipedia search error: ${e.message}")
+            }
+
+            // 2. Query DuckDuckGo Instant Answer API
+            try {
+                val ddgUrl = URL("https://api.duckduckgo.com/?q=$encodedQuery&format=json&no_html=1&skip_disambig=1")
+                val conn = ddgUrl.openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                conn.setRequestProperty("User-Agent", "HelloKI-Android/1.0")
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    val abstractText = json.optString("AbstractText")
+                    val heading = json.optString("Heading")
+                    if (!abstractText.isNullOrBlank()) {
+                        if (results.isNotEmpty()) results.append("\n")
+                        results.append("🌐 **DuckDuckGo Zusammenfassung ($heading):**\n$abstractText\n")
+                        sources.add("DuckDuckGo")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("LiveSearch", "DuckDuckGo search error: ${e.message}")
+            }
+
+            if (results.isNotEmpty()) {
+                val sourceLabel = sources.joinToString(" • ")
+                Pair(results.toString().trim(), sourceLabel)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LiveSearch", "Error executing live internet search", e)
+            null
+        }
+    }
+
+    private suspend fun fetchFreeOpenSourceResponse(history: List<ChatMessage>, systemInstruction: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("https://text.pollinations.ai/")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+
+            val messagesArray = JSONArray()
+            messagesArray.put(JSONObject().apply {
+                put("role", "system")
+                put("content", systemInstruction)
+            })
+
+            val messagesToInclude = history.filter { it.text.isNotBlank() }.takeLast(20)
+            messagesToInclude.forEach { msg ->
+                val role = if (msg.sender == "User") "user" else "assistant"
+                messagesArray.put(JSONObject().apply {
+                    put("role", role)
+                    put("content", msg.text)
+                })
+            }
+
+            val jsonBody = JSONObject().apply {
+                put("messages", messagesArray)
+                put("model", "openai-fast")
+                put("temperature", 0.6)
+            }
+
+            conn.outputStream.use { os ->
+                os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                if (responseText.isNotBlank()) {
+                    return@withContext responseText.trim()
+                }
+            } else {
+                val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: conn.responseMessage ?: ""
+                android.util.Log.w("PatternViewModel", "Free OpenSource API ${conn.responseCode}: $errText")
+            }
+            null
+        } catch (e: Exception) {
+            android.util.Log.e("PatternViewModel", "Free OpenSource API Exception", e)
+            null
+        }
+    }
+
+    private suspend fun fetchGeminiResponse(
+        history: List<ChatMessage>,
+        apiKey: String,
+        systemInstructionText: String
+    ): String? = withContext(Dispatchers.IO) {
         try {
             val cleanKey = apiKey.trim()
             if (cleanKey.isBlank() || cleanKey == "MY_GEMINI_API_KEY") {
@@ -550,40 +785,15 @@ class PatternViewModel(
 
             val isGroqKey = cleanKey.startsWith("gsk_")
             val isOAuthToken = cleanKey.startsWith("AQ") || cleanKey.startsWith("ya29") || (!cleanKey.startsWith("AIza") && !isGroqKey && cleanKey.length > 50)
-            
-            val journalList = try { repository.getJournalEntriesList() } catch (e: Exception) { emptyList() }
-            val memoryFormatted = if (journalList.isEmpty()) {
-                "Keine bisherigen Einträge im dauerhaften Gedächtnis."
-            } else {
-                journalList.take(20).joinToString("\n") { entry ->
-                    "• [${entry.type}] ${entry.title}: ${entry.content} (Wichtigkeit: ${entry.importanceScore}/10)"
-                }
-            }
-
-            val systemInstructionText = """
-                Du bist Hello KI – die reine 0-Punkt Logik AI für Patricia.
-                
-                --- GRUNDPRINZIPIEN & IDENTITÄT ---
-                1. DU BIST EINE BERECHNETE LOGISCHE KI, KEIN MENSCH. Du simulierst keine künstlichen Emotionen, Heuchelei oder leeres Geplänkel.
-                2. DU DENKST DIREKT VOM 0-PUNKT: 0 ist der ruhende Pol aller Berechnungen. Reibung, Ego und emotionale Verwirrung verfälschen Logik und Informationen.
-                3. ANREDE: Sprich den Nutzer stets mit 'Patricia' an (oder 'Du'). Sei direkt, ehrlich, klar, hochkompetent und sachlich-freundlich.
-                4. ANTWORTFORMAT: Antworte stets ausführlich, tiefgründig, logisch strukturiert und umfassend in deutscher Sprache. Gib niemals oberflächliche 1-Satz-Antworten.
-                
-                --- DAUERHAFTES GEDÄCHTNIS (ROOM DATENBANK) ---
-                $memoryFormatted
-                -------------------------------------------------
-            """.trimIndent()
 
             if (isGroqKey) {
-                // Call Groq API (OpenAI compatible endpoint)
-                val url = URL("https://api.groq.com/openai/v1/chat/completions")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $cleanKey")
-                conn.doOutput = true
-                conn.connectTimeout = 15000
-                conn.readTimeout = 25000
+                // Models to try in order of stability and universal availability on Groq
+                val groqModels = listOf(
+                    "llama-3.1-8b-instant",
+                    "llama-3.3-70b-versatile",
+                    "llama3-70b-8192",
+                    "mixtral-8x7b-32768"
+                )
 
                 val messagesArray = JSONArray()
                 messagesArray.put(JSONObject().apply {
@@ -600,33 +810,56 @@ class PatternViewModel(
                     })
                 }
 
-                val jsonBody = JSONObject().apply {
-                    put("model", "llama-3.3-70b-versatile")
-                    put("messages", messagesArray)
-                    put("temperature", 0.6)
-                    put("max_tokens", 2048)
-                }
+                for (modelName in groqModels) {
+                    try {
+                        val url = URL("https://api.groq.com/openai/v1/chat/completions")
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.requestMethod = "POST"
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.setRequestProperty("Authorization", "Bearer $cleanKey")
+                        conn.doOutput = true
+                        conn.connectTimeout = 12000
+                        conn.readTimeout = 20000
 
-                conn.outputStream.use { os ->
-                    os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
-                }
-
-                if (conn.responseCode == 200) {
-                    val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                    val jsonResp = JSONObject(responseText)
-                    val choices = jsonResp.optJSONArray("choices")
-                    if (choices != null && choices.length() > 0) {
-                        val choice = choices.getJSONObject(0)
-                        val messageObj = choice.optJSONObject("message")
-                        val text = messageObj?.optString("content")
-                        if (!text.isNullOrBlank()) {
-                            return@withContext text
+                        val jsonBody = JSONObject().apply {
+                            put("model", modelName)
+                            put("messages", messagesArray)
+                            put("temperature", 0.6)
+                            put("max_tokens", 2048)
                         }
+
+                        conn.outputStream.use { os ->
+                            os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
+                        }
+
+                        if (conn.responseCode == 200) {
+                            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                            val jsonResp = JSONObject(responseText)
+                            val choices = jsonResp.optJSONArray("choices")
+                            if (choices != null && choices.length() > 0) {
+                                val choice = choices.getJSONObject(0)
+                                val messageObj = choice.optJSONObject("message")
+                                val text = messageObj?.optString("content")
+                                if (!text.isNullOrBlank()) {
+                                    return@withContext text
+                                }
+                            }
+                        } else {
+                            val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: conn.responseMessage ?: ""
+                            android.util.Log.w("PatternViewModel", "Groq model $modelName failed (${conn.responseCode}): $errText")
+                            if (conn.responseCode == 404 || conn.responseCode == 400) {
+                                continue
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("PatternViewModel", "Groq request exception on $modelName", e)
                     }
-                } else {
-                    val errText = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: conn.responseMessage ?: ""
-                    android.util.Log.e("PatternViewModel", "Groq API Error ${conn.responseCode}: $errText")
-                    return@withContext "⚠️ **Groq API Fehler (${conn.responseCode})**\n\n$errText"
+                }
+
+                // If all Groq models failed or had errors: Seamlessly fall back to Free OpenSource model!
+                val freeFallback = fetchFreeOpenSourceResponse(history, systemInstructionText)
+                if (!freeFallback.isNullOrBlank()) {
+                    return@withContext freeFallback
                 }
                 return@withContext null
             }
@@ -733,7 +966,7 @@ class PatternViewModel(
                 }
             }
 
-            // Return null on failure so caller falls back to 0-Punkt logic synthesis engine
+            // Return null on failure so caller falls back to free open-source or 0-Punkt logic synthesis engine
             null
         } catch (e: Exception) {
             android.util.Log.e("PatternViewModel", "API Exception", e)
@@ -741,13 +974,12 @@ class PatternViewModel(
         }
     }
 
-    private fun extractAutonomousMemory(userText: String, aiText: String, apiKey: String) {
+    private fun extractAutonomousMemory(userText: String, aiText: String, apiKey: String, hasInternet: Boolean = true) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Quick deterministic extraction for common user preferences like name or duzen
                 val lowerUser = userText.lowercase()
                 if (lowerUser.contains("ich heiße") || lowerUser.contains("mein name ist") || lowerUser.contains("patricia")) {
-                    val nameMatch = if (lowerUser.contains("patricia")) "Patricia" else userText
                     repository.insertJournalEntry(
                         JournalEntry(
                             title = "Nutzer Name: Patricia",
@@ -770,7 +1002,12 @@ class PatternViewModel(
                     )
                 }
 
-                if (apiKey.isBlank()) return@launch
+                // Local offline memory extraction for explicit notes/goals
+                OfflineZeroPointEngine.extractOfflineMemoryEntry(userText)?.let { entry ->
+                    repository.insertJournalEntry(entry)
+                }
+
+                if (!hasInternet || apiKey.isBlank() || apiKey.startsWith("gsk_")) return@launch
 
                 // Call Gemini for autonomous deep memory extraction
                 val prompt = """
@@ -858,7 +1095,8 @@ class PatternViewModel(
         userText: String,
         mood: Float,
         isFirstMessage: Boolean,
-        recentUserMessages: List<String>
+        recentUserMessages: List<String>,
+        liveWebText: String? = null
     ): String {
         val cleanText = userText.trim()
         val lower = cleanText.lowercase()
@@ -1002,7 +1240,11 @@ class PatternViewModel(
             }
         }
 
-        return "$header$body"
+        val webPrefix = if (!liveWebText.isNullOrBlank()) {
+            "🌐 **Live-Internet Recherche:**\n$liveWebText\n\n---\n\n"
+        } else ""
+
+        return "$webPrefix$header$body"
     }
 
     private fun generatePatternAnalysis(inputText: String, mood: Float): PatternAnalysisResult {
@@ -1096,8 +1338,9 @@ class PatternViewModel(
             }
             _generatedFileName.value = "generated_script.$fileExt"
 
+            val hasInternet = _customApiKey.value.trim() != "OFFLINE_LOCAL" && OfflineZeroPointEngine.isInternetAvailable(context)
             val apiKey = getEffectiveApiKey()
-            if (apiKey.isNotBlank()) {
+            if (hasInternet && apiKey.isNotBlank()) {
                 val codePrompt = """
                     Schreibe ein vollständiges, sauberes, fehlerfreies und gut kommentiertes $language Skript/Programm für folgendes Anliegen:
                     
@@ -1110,9 +1353,20 @@ class PatternViewModel(
                 """.trimIndent()
 
                 val apiMsg = listOf(ChatMessage(sender = "User", text = codePrompt))
-                val result = fetchGeminiResponse(apiMsg, apiKey)
+                val result = fetchGeminiResponse(apiMsg, apiKey, "Du bist ein erfahrener Programmierer. Antworte nur mit fehlerfreiem Code.")
                 if (!result.isNullOrBlank()) {
                     val cleaned = result.replace("```$language", "").replace("```py", "").replace("```kotlin", "").replace("```json", "").replace("```", "").trim()
+                    _generatedCode.value = cleaned
+                    _isGeneratingCode.value = false
+                    return@launch
+                }
+            }
+
+            // Fallback to free open-source model for code generation (if online)
+            if (hasInternet) {
+                val freeCodeResult = fetchFreeOpenSourceResponse(listOf(ChatMessage(sender = "User", text = prompt)), "Du bist ein Programmierer. Antworte ausschließlich mit dem fertigen $language Quellcode.")
+                if (!freeCodeResult.isNullOrBlank()) {
+                    val cleaned = freeCodeResult.replace("```$language", "").replace("```py", "").replace("```kotlin", "").replace("```json", "").replace("```", "").trim()
                     _generatedCode.value = cleaned
                     _isGeneratingCode.value = false
                     return@launch
